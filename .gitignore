@@ -1,0 +1,27 @@
+# Node.js
+node_modules/
+.env
+
+# Python (if you're using a Python backend like FastAPI or Flask)
+__pycache__/
+*.pyc
+.env
+
+# VS Code
+.vscode/
+
+# MacOS
+.DS_Store
+
+# Logs
+*.log
+*.db
+
+# Others
+*.sqlite3
+sqlsense.db
+
+
+*.replit
+*.toml
+*.lock
