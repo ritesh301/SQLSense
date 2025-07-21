@@ -4,13 +4,13 @@ SQLSense is a Flask-based REST API that converts natural language queries into S
 
 ## Features
 
-- 🔤 **Natural Language to SQL**: Convert plain English queries to SQL statements
-- 🏗️ **Schema Generation**: Generate database schemas from natural language descriptions
-- 📊 **Multi-Database Support**: PostgreSQL, MySQL, and SQLite compatibility
-- 💾 **Query History**: Track and manage generated queries
-- 🗂️ **Schema Versioning**: Version control for database schemas
-- 🤖 **AI Assistant**: Interactive chat for SQL and database help
-- 🔌 **REST API**: Clean, well-documented API endpoints
+- 🔤 **Natural Language to SQL**: Convert plain English queries to SQL statements.
+- 🏗️ **Schema Generation**: Generate database schemas from natural language descriptions.
+- 📊 **Multi-Database Support**: PostgreSQL, MySQL, and SQLite compatibility.
+- 💾 **Query History**: Track and manage generated queries.
+- 🗂️ **Schema Versioning**: Version control for database schemas.
+- 🤖 **AI Assistant**: Interactive chat for SQL and database help.
+- 🔌 **REST API**: Clean, well-documented API endpoints.
 
 ## Quick Start
 
