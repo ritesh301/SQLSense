@@ -1,5 +1,5 @@
 from datetime import datetime
-from Backend.app import db
+from app import db
 from sqlalchemy import Text, DateTime, String, Integer, Boolean
 
 class QueryHistory(db.Model):

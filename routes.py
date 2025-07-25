@@ -1,7 +1,7 @@
 import json
 import logging
 from flask import Blueprint, request, jsonify
-from Backend.app import db
+from app import db
 from models import QueryHistory, SchemaVersion, ChatMessage
 from services.sql_generator import SQLGenerator
 from services.schema_generator import SchemaGenerator
