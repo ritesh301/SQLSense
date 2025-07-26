@@ -1,8 +1,8 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { motion } from "framer-motion"
-import { History, Search, Copy, Edit, Play, Clock, Database } from "lucide-react"
+import { History, Search, Copy, Edit, Play, Clock, Database, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -11,30 +11,96 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast"
 import { useAppStore } from "@/lib/store"
 
-export default function QueryHistory() {
+// Define a type for the data coming from the backend API
+interface QueryHistoryItem {
+  id: number;
+  natural_query: string;
+  generated_sql: string;
+  database_type: string;
+  created_at: string;
+  explanation: string | null;
+  model_used: string | null;
+  context: string | null;
+  is_favorite: boolean;
+}
+
+// Helper function to determine query type from SQL string
+const getQueryType = (sql: string): string => {
+  const upperSql = sql.trim().toUpperCase();
+  if (upperSql.startsWith('SELECT')) return 'SELECT';
+  if (upperSql.startsWith('INSERT')) return 'INSERT';
+  if (upperSql.startsWith('UPDATE')) return 'UPDATE';
+  if (upperSql.startsWith('DELETE')) return 'DELETE';
+  return 'OTHER';
+};
+
+export default function QueryHistoryPage() {
+  // State for data fetched from the backend
+  const [history, setHistory] = useState<QueryHistoryItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // State for filters
   const [searchTerm, setSearchTerm] = useState("")
   const [filterType, setFilterType] = useState("all")
   const [filterDialect, setFilterDialect] = useState("all")
 
-  const { queries, setCurrentQuery, setCurrentDialect } = useAppStore()
+  // Zustand store for cross-component state updates
+  const { setCurrentQuery, setCurrentDialect } = useAppStore()
   const { toast } = useToast()
 
-  const filteredQueries = queries.filter((query) => {
-    const matchesSearch =
-      query.naturalLanguage.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      query.sql.toLowerCase().includes(searchTerm.toLowerCase())
-    const matchesType = filterType === "all" || query.type === filterType
-    const matchesDialect = filterDialect === "all" || query.dialect === filterDialect
+  // Fetch data from the backend when the component mounts
+  useEffect(() => {
+    const fetchHistory = async () => {
+      setIsLoading(true);
+      setError(null);
+      try {
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/history`);
+        const data = await response.json();
 
-    return matchesSearch && matchesType && matchesDialect
-  })
+        if (!response.ok) {
+          throw new Error(data.error || "Failed to fetch query history.");
+        }
+        
+        // The backend returns a paginated object; we use the 'queries' array
+        setHistory(data.queries || []);
+      } catch (err: any) {
+        setError(err.message);
+        toast({
+          title: "Error Fetching History",
+          description: err.message,
+          variant: "destructive",
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    };
 
-  const handleReuseQuery = (query: any) => {
-    setCurrentQuery(query.naturalLanguage)
-    setCurrentDialect(query.dialect)
+    fetchHistory();
+  }, [toast]); // Dependency array ensures this runs once
+
+  // Memoized filtering logic to avoid re-calculating on every render
+  const filteredQueries = useMemo(() => {
+    return history.filter((query) => {
+      const queryType = getQueryType(query.generated_sql);
+      const matchesSearch =
+        query.natural_query.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        query.generated_sql.toLowerCase().includes(searchTerm.toLowerCase())
+      const matchesType = filterType === "all" || queryType === filterType
+      const matchesDialect = filterDialect === "all" || query.database_type === filterDialect
+
+      return matchesSearch && matchesType && matchesDialect
+    });
+  }, [history, searchTerm, filterType, filterDialect]);
+
+  const handleReuseQuery = (query: QueryHistoryItem) => {
+    // This function can be expanded to navigate the user back to the main page
+    // For now, it updates the global state
+    setCurrentQuery(query.natural_query)
+    setCurrentDialect(query.database_type)
     toast({
       title: "Query Loaded",
-      description: "Query has been loaded into the main input",
+      description: "Query has been loaded into the main input. Navigate to the home page to use it.",
     })
   }
 
@@ -122,62 +188,75 @@ export default function QueryHistory() {
 
         {/* Query List */}
         <div className="space-y-4">
-          {filteredQueries.map((query, index) => (
-            <motion.div
-              key={query.id}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: index * 0.05 }}
-            >
-              <Card className="hover:shadow-lg transition-shadow">
-                <CardHeader>
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <CardTitle className="text-lg mb-2">{query.naturalLanguage}</CardTitle>
-                      <div className="flex items-center space-x-4 text-sm text-gray-600 dark:text-gray-300">
-                        <div className="flex items-center space-x-1">
-                          <Clock className="w-4 h-4" />
-                          <span>{new Date(query.timestamp).toLocaleDateString()}</span>
-                        </div>
-                        <div className="flex items-center space-x-1">
-                          <Database className="w-4 h-4" />
-                          <span>{query.dialect.toUpperCase()}</span>
+          {isLoading ? (
+            <div className="text-center py-12">
+              <Loader2 className="w-16 h-16 text-blue-500 mx-auto mb-4 animate-spin" />
+              <h3 className="text-xl font-semibold text-gray-600 dark:text-gray-300">Loading History...</h3>
+            </div>
+          ) : error ? (
+            <div className="text-center py-12 text-red-500">
+              <History className="w-16 h-16 mx-auto mb-4" />
+              <h3 className="text-xl font-semibold mb-2">Failed to Load History</h3>
+              <p>{error}</p>
+            </div>
+          ) : filteredQueries.length > 0 ? (
+            filteredQueries.map((query, index) => (
+              <motion.div
+                key={query.id}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: index * 0.05 }}
+              >
+                <Card className="hover:shadow-lg transition-shadow">
+                  <CardHeader>
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <CardTitle className="text-lg mb-2">{query.natural_query}</CardTitle>
+                        <div className="flex items-center space-x-4 text-sm text-gray-600 dark:text-gray-300">
+                          <div className="flex items-center space-x-1">
+                            <Clock className="w-4 h-4" />
+                            <span>{new Date(query.created_at).toLocaleDateString()}</span>
+                          </div>
+                          <div className="flex items-center space-x-1">
+                            <Database className="w-4 h-4" />
+                            <span>{query.database_type.toUpperCase()}</span>
+                          </div>
                         </div>
                       </div>
+                      <Badge className={getTypeColor(getQueryType(query.generated_sql))}>
+                        {getQueryType(query.generated_sql)}
+                      </Badge>
                     </div>
-                    <Badge className={getTypeColor(query.type)}>{query.type}</Badge>
-                  </div>
-                </CardHeader>
+                  </CardHeader>
 
-                <CardContent>
-                  <div className="bg-gray-900 dark:bg-gray-950 text-green-400 p-4 rounded-lg mb-4">
-                    <pre className="text-sm overflow-x-auto">
-                      <code>{query.sql}</code>
-                    </pre>
-                  </div>
+                  <CardContent>
+                    <div className="bg-gray-900 dark:bg-gray-950 text-green-400 p-4 rounded-lg mb-4">
+                      <pre className="text-sm overflow-x-auto">
+                        <code>{query.generated_sql}</code>
+                      </pre>
+                    </div>
 
-                  <div className="flex flex-wrap gap-2">
-                    <Button variant="outline" size="sm" onClick={() => handleReuseQuery(query)}>
-                      <Play className="w-4 h-4 mr-2" />
-                      Re-use
-                    </Button>
+                    <div className="flex flex-wrap gap-2">
+                      <Button variant="outline" size="sm" onClick={() => handleReuseQuery(query)}>
+                        <Play className="w-4 h-4 mr-2" />
+                        Re-use
+                      </Button>
 
-                    <Button variant="outline" size="sm" onClick={() => handleCopySQL(query.sql)}>
-                      <Copy className="w-4 h-4 mr-2" />
-                      Copy SQL
-                    </Button>
+                      <Button variant="outline" size="sm" onClick={() => handleCopySQL(query.generated_sql)}>
+                        <Copy className="w-4 h-4 mr-2" />
+                        Copy SQL
+                      </Button>
 
-                    <Button variant="outline" size="sm">
-                      <Edit className="w-4 h-4 mr-2" />
-                      Edit & Refine
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            </motion.div>
-          ))}
-
-          {filteredQueries.length === 0 && (
+                      <Button variant="outline" size="sm">
+                        <Edit className="w-4 h-4 mr-2" />
+                        Edit & Refine
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              </motion.div>
+            ))
+          ) : (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-center py-12">
               <History className="w-16 h-16 text-gray-400 mx-auto mb-4" />
               <h3 className="text-xl font-semibold text-gray-600 dark:text-gray-300 mb-2">

@@ -1,8 +1,8 @@
 {
-  "/version-control/page": "app/version-control/page.js",
   "/page": "app/page.js",
-  "/query-history/page": "app/query-history/page.js",
   "/schema-designer/page": "app/schema-designer/page.js",
+  "/version-control/page": "app/version-control/page.js",
+  "/analytics/page": "app/analytics/page.js",
   "/rewards/page": "app/rewards/page.js",
-  "/about/page": "app/about/page.js"
+  "/query-history/page": "app/query-history/page.js"
 }

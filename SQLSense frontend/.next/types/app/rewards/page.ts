@@ -1,4 +1,4 @@
-// File: E:\Ajinkya\IT\VS codes\SQLSense\app\rewards\page.tsx
+// File: C:\Users\RITESH PRADHAN\OneDrive\Desktop\main_backend\SQLSense frontend\app\rewards\page.tsx
 import * as entry from '../../../../app/rewards/page.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 

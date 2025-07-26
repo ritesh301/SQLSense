@@ -1,6 +1,7 @@
 from datetime import datetime
 from app import db
-from sqlalchemy import Text, DateTime, String, Integer, Boolean
+from sqlalchemy import Text, DateTime, String, Integer, Boolean, ForeignKey
+from sqlalchemy.orm import relationship
 
 class QueryHistory(db.Model):
     __tablename__ = 'query_history'
@@ -14,6 +15,9 @@ class QueryHistory(db.Model):
     context = db.Column(Text)
     created_at = db.Column(DateTime, default=datetime.utcnow)
     is_favorite = db.Column(Boolean, default=False)
+
+    # Relationship to AnalyticsEvent
+    events = relationship('AnalyticsEvent', back_populates='query_history', cascade="all, delete-orphan")
     
     def to_dict(self):
         return {
@@ -72,4 +76,53 @@ class ChatMessage(db.Model):
             'response': self.response,
             'message_type': self.message_type,
             'created_at': self.created_at.isoformat() if self.created_at else None
+        }
+
+# --- NEW MODEL FOR ANALYTICS ---
+class AnalyticsEvent(db.Model):
+    __tablename__ = 'analytics_events'
+
+    id = db.Column(Integer, primary_key=True)
+    event_type = db.Column(String(100), nullable=False)  # e.g., 'generate_sql', 'generate_schema'
+    created_at = db.Column(DateTime, default=datetime.utcnow)
+    
+    # Foreign Key to link to a specific query
+    query_history_id = db.Column(Integer, ForeignKey('query_history.id'), nullable=True)
+    
+    # Relationship to QueryHistory
+    query_history = relationship('QueryHistory', back_populates='events')
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'event_type': self.event_type,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'query_history_id': self.query_history_id
+        }
+
+
+# --- NEW MODEL FOR VERSION CONTROL ---
+# Add this class to your models.py file
+
+class QueryVersion(db.Model):
+    __tablename__ = 'query_versions'
+
+    id = db.Column(Integer, primary_key=True)
+    version_message = db.Column(String(255), nullable=True)
+    generated_sql = db.Column(Text, nullable=False)
+    created_at = db.Column(DateTime, default=datetime.utcnow)
+    
+    # Foreign Key to link to a specific query in the history
+    query_history_id = db.Column(Integer, ForeignKey('query_history.id'), nullable=False)
+    
+    # Relationship to QueryHistory
+    query_history = relationship('QueryHistory', backref='versions')
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'version_message': self.version_message,
+            'generated_sql': self.generated_sql,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'query_history_id': self.query_history_id
         }

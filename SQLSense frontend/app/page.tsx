@@ -1,8 +1,11 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useRef } from "react"
 import { motion } from "framer-motion"
-import { Database, Mic, Copy, Download, Sparkles, Zap, ArrowRight, Play, Users, Globe } from "lucide-react"
+import { 
+  Database, Mic, Copy, Download, Sparkles, Zap, ArrowRight, Play, Users, Globe, 
+  GitBranch, History, BarChart3 // <-- ICONS ADDED HERE
+} from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -11,12 +14,23 @@ import { Badge } from "@/components/ui/badge"
 import { useToast } from "@/hooks/use-toast"
 import { useAppStore } from "@/lib/store"
 
+// For Web Speech API compatibility
+interface CustomWindow extends Window {
+  SpeechRecognition: any;
+  webkitSpeechRecognition: any;
+}
+declare const window: CustomWindow;
+
+
 export default function HomePage() {
   const [isGenerating, setIsGenerating] = useState(false)
   const [generatedSQL, setGeneratedSQL] = useState("")
   const [isListening, setIsListening] = useState(false)
+  
+  // Ref to hold the speech recognition instance
+  const recognitionRef = useRef<any>(null);
 
-  const { currentQuery, setCurrentQuery, currentDialect, setCurrentDialect, addQuery, user } = useAppStore()
+  const { currentQuery, setCurrentQuery, currentDialect, setCurrentDialect, user } = useAppStore()
 
   const { toast } = useToast()
 
@@ -31,51 +45,46 @@ export default function HomePage() {
     }
 
     setIsGenerating(true)
+    setGeneratedSQL("")
 
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 2000))
+    try {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/generate-sql`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: currentQuery,
+          database_type: currentDialect,
+          context: "" // You can add context from a schema here if needed
+        })
+      });
 
-    // Mock SQL generation based on input
-    const mockSQL = generateMockSQL(currentQuery, currentDialect)
-    setGeneratedSQL(mockSQL)
+      const data = await response.json();
 
-    // Add to query history
-    addQuery({
-      naturalLanguage: currentQuery,
-      sql: mockSQL,
-      dialect: currentDialect,
-      type: detectQueryType(mockSQL),
-    })
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to generate SQL");
+      }
+      
+      setGeneratedSQL(data.sql_query);
+      
+      toast({
+        title: "SQL Generated!",
+        description: "Your query has been converted to SQL and saved to history.",
+      });
 
-    setIsGenerating(false)
-
-    toast({
-      title: "SQL Generated!",
-      description: "Your query has been converted to SQL",
-    })
-  }
-
-  const generateMockSQL = (query: string, dialect: string) => {
-    const lowerQuery = query.toLowerCase()
-
-    if (lowerQuery.includes("user") && lowerQuery.includes("select")) {
-      return `SELECT * FROM users WHERE created_at >= '2024-01-01';`
+    } catch (error: any) {
+      console.error("SQL generation error:", error);
+      toast({
+        title: "Error Generating SQL",
+        description: error.message || "An unknown error occurred.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsGenerating(false)
     }
-    if (lowerQuery.includes("count") && lowerQuery.includes("order")) {
-      return `SELECT status, COUNT(*) as total_orders FROM orders GROUP BY status;`
-    }
-    if (lowerQuery.includes("join") || lowerQuery.includes("product")) {
-      return `SELECT u.name, p.title, oi.quantity 
-FROM users u 
-JOIN orders o ON u.id = o.user_id 
-JOIN order_items oi ON o.id = oi.order_id 
-JOIN products p ON oi.product_id = p.id;`
-    }
-
-    return `SELECT * FROM table_name WHERE condition = 'value';`
   }
 
   const detectQueryType = (sql: string) => {
+    if (!sql) return "OTHER";
     const upperSQL = sql.toUpperCase()
     if (upperSQL.startsWith("SELECT")) return "SELECT"
     if (upperSQL.startsWith("INSERT")) return "INSERT"
@@ -85,6 +94,7 @@ JOIN products p ON oi.product_id = p.id;`
   }
 
   const copyToClipboard = () => {
+    if (!generatedSQL) return;
     navigator.clipboard.writeText(generatedSQL)
     toast({
       title: "Copied!",
@@ -93,6 +103,7 @@ JOIN products p ON oi.product_id = p.id;`
   }
 
   const downloadSQL = () => {
+    if (!generatedSQL) return;
     const blob = new Blob([generatedSQL], { type: "text/sql" })
     const url = URL.createObjectURL(blob)
     const a = document.createElement("a")
@@ -107,16 +118,47 @@ JOIN products p ON oi.product_id = p.id;`
     })
   }
 
-  const toggleVoiceInput = () => {
-    setIsListening(!isListening)
-    // Mock voice input
-    if (!isListening) {
-      setTimeout(() => {
-        setCurrentQuery("Show me all users who registered this month")
-        setIsListening(false)
-      }, 2000)
+  useEffect(() => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      recognitionRef.current = new SpeechRecognition();
+      recognitionRef.current.continuous = false;
+      recognitionRef.current.lang = 'en-US';
+
+      recognitionRef.current.onresult = (event: any) => {
+        const transcript = event.results[0][0].transcript;
+        setCurrentQuery(transcript);
+        setIsListening(false);
+      };
+
+      recognitionRef.current.onerror = (event: any) => {
+        console.error("Speech recognition error", event.error);
+        toast({ title: "Voice Error", description: `Error: ${event.error}`, variant: "destructive" });
+        setIsListening(false);
+      };
+      
+      recognitionRef.current.onend = () => {
+        setIsListening(false);
+      };
     }
-  }
+  }, [setCurrentQuery, toast]);
+  
+
+  const toggleVoiceInput = () => {
+    if (!recognitionRef.current) {
+        toast({ title: "Voice Not Supported", description: "Your browser does not support voice recognition.", variant: "destructive"});
+        return;
+    }
+
+    if (isListening) {
+      recognitionRef.current.stop();
+      setIsListening(false);
+    } else {
+      recognitionRef.current.start();
+      setIsListening(true);
+    }
+  };
+
 
   return (
     <div className="min-h-screen">
@@ -347,28 +389,28 @@ JOIN products p ON oi.product_id = p.id;`
               {
                 title: "Query History",
                 description: "Track, organize, and reuse your previous SQL queries",
-                icon: Database,
+                icon: History,
                 href: "/query-history",
                 color: "from-green-500 to-emerald-500",
               },
               {
                 title: "Version Control",
                 description: "Manage schema versions with rollback and diff capabilities",
-                icon: Database,
+                icon: GitBranch,
                 href: "/version-control",
                 color: "from-orange-500 to-red-500",
               },
               {
                 title: "Analytics Dashboard",
                 description: "Gain insights into your SQL usage patterns and productivity",
-                icon: Database,
+                icon: BarChart3,
                 href: "/analytics",
                 color: "from-indigo-500 to-purple-500",
               },
               {
                 title: "Rewards System",
                 description: "Earn tokens and badges as you improve your SQL skills",
-                icon: Database,
+                icon: Zap,
                 href: "/rewards",
                 color: "from-yellow-500 to-orange-500",
               },

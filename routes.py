@@ -1,8 +1,9 @@
 import json
 import logging
+from datetime import datetime, timedelta
 from flask import Blueprint, request, jsonify
 from app import db
-from models import QueryHistory, SchemaVersion, ChatMessage
+from models import QueryHistory, SchemaVersion, ChatMessage, AnalyticsEvent, QueryVersion
 from services.sql_generator import SQLGenerator
 from services.schema_generator import SchemaGenerator
 
@@ -50,10 +51,18 @@ def generate_sql():
         db.session.add(history_entry)
         db.session.commit()
         
+        # Log analytics event for the successful generation
+        analytics_event = AnalyticsEvent(event_type='generate_sql', query_history_id=history_entry.id)
+        db.session.add(analytics_event)
+        db.session.commit()
+        
+        # Add the new query ID to the response so the frontend can use it
+        result['query_id'] = history_entry.id
         return jsonify(result)
         
     except Exception as e:
         logging.error(f"Error generating SQL: {str(e)}")
+        db.session.rollback()
         return jsonify({'error': 'Internal server error'}), 500
 
 @api_bp.route('/generate-schema', methods=['POST'])
@@ -84,13 +93,22 @@ def generate_schema():
             explanation=result.get('explanation', ''),
             tables_info=json.dumps(result.get('tables', []))
         )
+
         db.session.add(schema_version)
         db.session.commit()
+
+        # Log analytics event
+        analytics_event = AnalyticsEvent(event_type='generate_schema')
+        db.session.add(analytics_event)
+        db.session.commit()
+        
+        result['schema_id'] = schema_version.id 
         
         return jsonify(result)
-        
+    
     except Exception as e:
         logging.error(f"Error generating schema: {str(e)}")
+        db.session.rollback()
         return jsonify({'error': 'Internal server error'}), 500
 
 @api_bp.route('/history')
@@ -128,7 +146,7 @@ def get_schema_versions():
 
 @api_bp.route('/save', methods=['POST'])
 def save_item():
-    """Save a query or schema with metadata"""
+    """Save a query or schema with metadata (e.g., mark as favorite)"""
     try:
         data = request.get_json()
         
@@ -162,6 +180,63 @@ def save_item():
     except Exception as e:
         logging.error(f"Error saving item: {str(e)}")
         return jsonify({'error': 'Internal server error'}), 500
+
+# --- NEW: ANALYTICS ENDPOINT ---
+@api_bp.route('/analytics', methods=['GET'])
+def get_analytics():
+    """Get usage analytics for the dashboard"""
+    try:
+        sql_generations_total = AnalyticsEvent.query.filter_by(event_type='generate_sql').count()
+        schema_generations_total = AnalyticsEvent.query.filter_by(event_type='generate_schema').count()
+        total_queries_saved = QueryHistory.query.count()
+
+        return jsonify({
+            'sql_generations_total': sql_generations_total,
+            'schema_generations_total': schema_generations_total,
+            'total_queries_in_history': total_queries_saved
+        })
+    except Exception as e:
+        logging.error(f"Error getting analytics: {str(e)}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+# --- NEW: VERSION CONTROL ENDPOINTS ---
+@api_bp.route('/history/<int:query_id>/versions', methods=['POST'])
+def save_query_version(query_id):
+    """Save a new version of a specific query"""
+    try:
+        data = request.get_json()
+        if not data or 'generated_sql' not in data:
+            return jsonify({'error': 'generated_sql is required'}), 400
+
+        query = QueryHistory.query.get_or_404(query_id)
+        
+        new_version = QueryVersion(
+            query_history_id=query.id,
+            generated_sql=data['generated_sql'],
+            version_message=data.get('version_message', f'Version saved at {datetime.utcnow().isoformat()}')
+        )
+        db.session.add(new_version)
+        db.session.commit()
+        
+        return jsonify(new_version.to_dict()), 201
+
+    except Exception as e:
+        logging.error(f"Error saving query version: {str(e)}")
+        db.session.rollback()
+        return jsonify({'error': 'Internal server error'}), 500
+
+@api_bp.route('/history/<int:query_id>/versions', methods=['GET'])
+def get_query_versions(query_id):
+    """Get all versions of a specific query"""
+    try:
+        query = QueryHistory.query.get_or_404(query_id)
+        versions = QueryVersion.query.filter_by(query_history_id=query.id).order_by(QueryVersion.created_at.desc()).all()
+        return jsonify([v.to_dict() for v in versions])
+        
+    except Exception as e:
+        logging.error(f"Error getting query versions: {str(e)}")
+        return jsonify({'error': 'Internal server error'}), 500
+
 
 @api_bp.route('/chat', methods=['POST'])
 def chat():

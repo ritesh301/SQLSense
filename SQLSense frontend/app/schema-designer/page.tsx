@@ -24,6 +24,7 @@ export default function SchemaDesigner() {
   const [schemaName, setSchemaName] = useState("")
   const [isGenerating, setIsGenerating] = useState(false)
   const [generatedDiagram, setGeneratedDiagram] = useState("")
+  const [generatedSchemaId, setGeneratedSchemaId] = useState<number | null>(null); // To store the ID of the saved schema
   const [isChatOpen, setIsChatOpen] = useState(false)
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
     {
@@ -38,6 +39,7 @@ export default function SchemaDesigner() {
   const { addSchema, user } = useAppStore()
   const { toast } = useToast()
 
+  // --- MODIFIED: Connect to Backend API ---
   const handleGenerateSchema = async () => {
     if (!schemaDescription.trim()) {
       toast({
@@ -49,96 +51,92 @@ export default function SchemaDesigner() {
     }
 
     setIsGenerating(true)
+    setGeneratedDiagram("")
+    setGeneratedSchemaId(null)
 
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 2000))
+    try {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/generate-schema`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          description: schemaDescription,
+          name: schemaName || "Untitled Schema",
+          database_type: "postgresql" // Or make this selectable in the UI
+        })
+      });
 
-    // Generate mock Mermaid diagram
-    const mockDiagram = generateMockDiagram(schemaDescription)
-    setGeneratedDiagram(mockDiagram)
+      const data = await response.json();
 
-    setIsGenerating(false)
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to generate schema");
+      }
 
-    toast({
-      title: "Schema Generated!",
-      description: "Your database schema has been created",
-    })
+      // Assuming the 'schema' field in the response contains Mermaid-compatible DDL
+      setGeneratedDiagram(data.schema);
+      setGeneratedSchemaId(data.schema_id); // Assumes the backend returns the ID
+
+      toast({
+        title: "Schema Generated!",
+        description: "Your database schema has been created and saved.",
+      });
+
+    } catch (error: any) {
+      console.error("Schema generation error:", error);
+      toast({
+        title: "Error Generating Schema",
+        description: error.message || "An unknown error occurred.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsGenerating(false)
+    }
   }
 
-  const generateMockDiagram = (description: string) => {
-    const lowerDesc = description.toLowerCase()
-
-    if (lowerDesc.includes("ecommerce") || lowerDesc.includes("shop") || lowerDesc.includes("order")) {
-      return `graph TD
-    A[Users] --> B[Orders]
-    B --> C[Order_Items]
-    C --> D[Products]
-    D --> E[Categories]
-    A --> F[Addresses]
-    A --> G[Payment_Methods]
-    B --> G
-    
-    A --> |"user_id"| B
-    B --> |"order_id"| C
-    C --> |"product_id"| D
-    D --> |"category_id"| E
-    A --> |"user_id"| F
-    A --> |"user_id"| G`
-    }
-
-    if (lowerDesc.includes("blog") || lowerDesc.includes("post") || lowerDesc.includes("article")) {
-      return `graph TD
-    A[Users] --> B[Posts]
-    B --> C[Comments]
-    B --> D[Tags]
-    B --> E[Categories]
-    A --> C
-    
-    A --> |"author_id"| B
-    B --> |"post_id"| C
-    C --> |"user_id"| A
-    B --> |"category_id"| E`
-    }
-
-    return `graph TD
-    A[Table1] --> B[Table2]
-    B --> C[Table3]
-    A --> C
-    
-    A --> |"foreign_key"| B
-    B --> |"foreign_key"| C`
-  }
-
-  const handleSaveSchema = () => {
-    if (!schemaName.trim() || !generatedDiagram) {
+  // --- MODIFIED: Connect to Backend API ---
+  const handleSaveSchema = async () => {
+    if (!generatedSchemaId) {
       toast({
         title: "Cannot save schema",
-        description: "Please provide a name and generate a schema first",
+        description: "Please generate a schema first. It is saved automatically, this button is for updates.",
         variant: "destructive",
       })
       return
     }
 
-    addSchema({
-      name: schemaName,
-      description: schemaDescription,
-      diagram: generatedDiagram,
-      version: 1,
-      author: user?.name || "Anonymous",
-    })
+    // This function can be used to update the schema, e.g., mark it as active
+    try {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/save`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'schema',
+          schema_id: generatedSchemaId,
+          is_active: true // Example update
+        })
+      });
 
-    toast({
-      title: "Schema Saved!",
-      description: "Your schema has been saved to version control",
-    })
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to save schema");
+      }
 
-    // Reset form
-    setSchemaName("")
-    setSchemaDescription("")
-    setGeneratedDiagram("")
+      toast({
+        title: "Schema Updated!",
+        description: "Your schema has been updated successfully.",
+      });
+
+    } catch (error: any) {
+      console.error("Schema save error:", error);
+      toast({
+        title: "Error Saving Schema",
+        description: error.message || "An unknown error occurred.",
+        variant: "destructive",
+      });
+    }
   }
 
-  const handleSendMessage = () => {
+  // --- MODIFIED: Connect to Backend API ---
+  const handleSendMessage = async () => {
     if (!currentMessage.trim()) return
 
     const userMessage: ChatMessage = {
@@ -149,35 +147,42 @@ export default function SchemaDesigner() {
     }
 
     setChatMessages((prev) => [...prev, userMessage])
-
-    // Simulate assistant response
-    setTimeout(() => {
-      const assistantMessage: ChatMessage = {
-        id: Math.random().toString(36).substr(2, 9),
-        type: "assistant",
-        content: generateAssistantResponse(currentMessage),
-        timestamp: new Date(),
-      }
-      setChatMessages((prev) => [...prev, assistantMessage])
-    }, 1000)
-
+    const messageToSend = currentMessage;
     setCurrentMessage("")
-  }
 
-  const generateAssistantResponse = (message: string) => {
-    const lowerMessage = message.toLowerCase()
+    try {
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/chat`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                message: messageToSend,
+                type: 'schema' // Context for the chat
+            })
+        });
 
-    if (lowerMessage.includes("add") && lowerMessage.includes("table")) {
-      return "I'll help you add a new table. What should we call it and what columns do you need?"
-    }
-    if (lowerMessage.includes("column")) {
-      return "Great! I can add columns to your existing tables. Which table and what type of column?"
-    }
-    if (lowerMessage.includes("relationship") || lowerMessage.includes("foreign key")) {
-      return "I'll help you create relationships between tables. Which tables should be connected?"
-    }
+        const data = await response.json();
+        if (!response.ok) {
+            throw new Error(data.error || "Failed to get response from assistant");
+        }
 
-    return "I understand you want to modify the schema. Can you be more specific about what changes you'd like to make?"
+        const assistantMessage: ChatMessage = {
+            id: Math.random().toString(36).substr(2, 9),
+            type: "assistant",
+            content: data.response,
+            timestamp: new Date(),
+        }
+        setChatMessages((prev) => [...prev, assistantMessage])
+
+    } catch (error: any) {
+        console.error("Chat error:", error);
+        const assistantErrorMessage: ChatMessage = {
+            id: Math.random().toString(36).substr(2, 9),
+            type: "assistant",
+            content: `Sorry, I encountered an error: ${error.message}`,
+            timestamp: new Date(),
+        }
+        setChatMessages((prev) => [...prev, assistantErrorMessage]);
+    }
   }
 
   return (
@@ -240,9 +245,9 @@ export default function SchemaDesigner() {
                     </Button>
 
                     {generatedDiagram && (
-                      <Button onClick={handleSaveSchema} variant="outline" disabled={!schemaName.trim()}>
+                      <Button onClick={handleSaveSchema} variant="outline" disabled={!generatedSchemaId}>
                         <Save className="w-4 h-4 mr-2" />
-                        Save
+                        Update Schema
                       </Button>
                     )}
                   </div>
