@@ -1,7 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  output: 'export',
-  trailingSlash: true,
+  // Keep your other settings for ESLint, TypeScript, and Images
   eslint: {
     ignoreDuringBuilds: true,
   },
@@ -11,11 +10,7 @@ const nextConfig = {
   images: {
     unoptimized: true
   },
-  // Enable static export for deployment
-  experimental: {
-    optimizeCss: true,
-  },
-  // PWA configuration for mobile
+  // Keep the headers configuration
   async headers() {
     return [
       {
@@ -39,4 +34,4 @@ const nextConfig = {
   },
 }
 
-export default nextConfig
+export default nextConfig ;
