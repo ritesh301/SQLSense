@@ -17,9 +17,12 @@ db = SQLAlchemy(model_class=Base)
 def create_app():
     app = Flask(__name__)
     
-    # Configure CORS to allow requests from your frontend
-    # This is crucial for the frontend to be able to communicate with the backend
-    CORS(app, resources={r"/api/*": {"origins": ["http://localhost:3000", "https://*.vercel.app"]}})
+    # --- CORRECT, CENTRALIZED CORS CONFIGURATION ---
+    # This reads the frontend URL from an environment variable on Render.
+    origins = os.environ.get("CORS_ORIGINS")
+    if origins:
+        CORS(app, resources={r"/api/*": {"origins": origins}})
+    # ---------------------------------------------
     
     # Configure app
     app.secret_key = os.environ.get("SESSION_SECRET", "dev-secret-key-change-in-production")
